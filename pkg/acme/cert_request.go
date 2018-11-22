@@ -113,7 +113,28 @@ func (a *Acme) verifyDomain(domain string) (auth *acme.Authorization, err error)
 	return auth, nil
 }
 
+// shouldRequestCertificate compares the list of domains about to be requested
+// to the list of domains missing from an existing certificate. It returns
+// false if none of the ready domains matches a missing domain.
+//
+// This is meant to avoid certificate request loops when domains in the
+// certificate request are not reachable.
+func shouldRequestCertificate(readyToRequest, missingDomains []string) bool {
+	for _, ready := range readyToRequest {
+		for _, missing := range missingDomains {
+			if ready == missing {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (a *Acme) ObtainCertificate(domains []string) (data map[string][]byte, err error) {
+	return a.ObtainCertificate2(domains, domains)
+}
+
+func (a *Acme) ObtainCertificate2(domains, missingDomains []string) (data map[string][]byte, err error) {
 	err = a.ensureAcmeClient()
 	if err != nil {
 		return data, err
@@ -178,6 +199,10 @@ func (a *Acme) ObtainCertificate(domains []string) (data map[string][]byte, err 
 		a.Log().WithField("failed_domains", failedDomains).Warnf("authorization failed for some domains")
 	}
 	// TODO: Mark failed domains as failed in ingress
+
+	if !shouldRequestCertificate(successfulDomains, missingDomains) {
+		return data, fmt.Errorf("all reachable domains are already in existing certificate")
+	}
 
 	domains = successfulDomains
 

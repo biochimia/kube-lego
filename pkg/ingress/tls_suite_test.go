@@ -113,11 +113,26 @@ var _ = Describe("Tls", func() {
 					tls.newCertNeeded(),
 				).To(Equal(true))
 			})
+			It("should be true for missing domain", func() {
+				mockSec.EXPECT().TlsExpireTime().AnyTimes().Return(
+					time.Now().Add(30*24*time.Hour),
+					nil,
+				)
+				mockSec.EXPECT().MissingTlsDomains(
+					[]string{"das.de.de", "k8s.io"},
+				).AnyTimes().Return([]string{"k8s.io"})
+				Expect(
+					tls.newCertNeeded(),
+				).To(Equal(true))
+			})
 			It("should be false for unexpired cert", func() {
 				mockSec.EXPECT().TlsExpireTime().AnyTimes().Return(
 					time.Now().Add(30*24*time.Hour),
 					nil,
 				)
+				mockSec.EXPECT().MissingTlsDomains(
+					[]string{"das.de.de", "k8s.io"},
+				).AnyTimes().Return(nil)
 				Expect(
 					tls.newCertNeeded(),
 				).To(Equal(false))

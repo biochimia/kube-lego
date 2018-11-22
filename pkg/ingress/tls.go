@@ -66,26 +66,26 @@ func (t *Tls) Log() *logrus.Entry {
 }
 
 func (i *Tls) newCertNeeded() bool {
-	if len(i.Hosts()) == 0 {
+	return len(i.missingDomainsInCert()) != 0
+}
+
+func (i *Tls) missingDomainsInCert() []string {
+	hosts := i.Hosts()
+	if len(hosts) == 0 {
 		i.Log().Info("no host associated with ingress")
-		return false
+		return nil
 	}
 
 	tlsSecret := i.Secret()
 	if !tlsSecret.Exists() {
 		i.Log().Info("no cert associated with ingress")
-		return true
-	}
-
-	if !tlsSecret.TlsDomainsInclude(i.Hosts()) {
-		i.Log().WithField("domains", i.Hosts()).Info("cert does not cover all domains")
-		return true
+		return hosts
 	}
 
 	expireTime, err := tlsSecret.TlsExpireTime()
 	if err != nil {
 		i.Log().Warn("error while reading expiry time: ", err)
-		return true
+		return hosts
 	}
 
 	minimumValidity := i.ingress.KubeLego().LegoMinimumValidity()
@@ -93,25 +93,32 @@ func (i *Tls) newCertNeeded() bool {
 	logger := i.Log().WithField("expire_time", expireTime)
 	if timeLeft < minimumValidity {
 		logger.Infof("cert expires soon so renew")
-		return true
+		return hosts
 	} else {
 		logger.Infof("cert expires in %.1f days, no renewal needed", timeLeft.Hours()/24)
 	}
 
-	return false
+	missingDomains := tlsSecret.MissingTlsDomains(hosts)
+	if len(missingDomains) != 0 {
+		i.Log().WithField("domains", i.Hosts()).Info("cert does not cover all domains")
+		return missingDomains
+	}
+
+	return nil
 }
 
 func (i *Tls) Process() error {
 
-	if !i.newCertNeeded() {
+	missingDomains := i.missingDomainsInCert()
+	if len(missingDomains) == 0 {
 		i.Log().Infof("no cert request needed")
 		return nil
 	}
 
-	return i.RequestCert()
+	return i.RequestCert(missingDomains)
 }
 
-func (i *Tls) RequestCert() error {
+func (i *Tls) RequestCert(missingDomains []string) error {
 	// sanity check
 	if i.IngressTLS.SecretName == "" {
 		return errors.New("Ingress has an empty secretName. Skipping certificate retrieval")
@@ -119,8 +126,9 @@ func (i *Tls) RequestCert() error {
 
 	i.Log().Infof("requesting certificate for %s", strings.Join(i.Hosts(), ","))
 
-	certData, err := i.ingress.KubeLego().AcmeClient().ObtainCertificate(
+	certData, err := i.ingress.KubeLego().AcmeClient().ObtainCertificate2(
 		i.Hosts(),
+		missingDomains,
 	)
 	if err != nil {
 		return err

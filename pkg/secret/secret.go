@@ -105,23 +105,27 @@ func (o *Secret) Object() *k8sApi.Secret {
 }
 
 func (o *Secret) TlsDomainsInclude(domains []string) bool {
+	return len(o.MissingTlsDomains(domains)) == 0
+}
 
-	tlsDomainsMap := make(map[string]bool)
+func (o *Secret) MissingTlsDomains(domains []string) []string {
 	tlsDomainsSlice, err := o.TlsDomains()
 	if err != nil {
-		return false
+		return domains
 	}
+	tlsDomainsMap := make(map[string]bool)
 	for _, domain := range tlsDomainsSlice {
 		tlsDomainsMap[domain] = true
 	}
 
+	var missingDomains []string
 	for _, domain := range domains {
 		if val, ok := tlsDomainsMap[domain]; !ok || !val {
-			return false
+			missingDomains = append(missingDomains, domain)
 		}
 	}
 
-	return true
+	return missingDomains
 }
 
 func (o *Secret) tlsCertPem() (cert *x509.Certificate, err error) {

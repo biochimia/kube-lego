@@ -42,6 +42,7 @@ type KubeLego interface {
 
 type Acme interface {
 	ObtainCertificate(domains []string) (map[string][]byte, error)
+	ObtainCertificate2(domains []string, missingDomains []string) (map[string][]byte, error)
 }
 
 type Tls interface {
@@ -66,6 +67,7 @@ type Secret interface {
 	Save() error
 	TlsDomains() ([]string, error)
 	TlsDomainsInclude(domains []string) bool
+	MissingTlsDomains(domains []string) []string
 	TlsExpireTime() (time.Time, error)
 }
 
